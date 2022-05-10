@@ -19,7 +19,7 @@ func setTimer() error {
 	}
 	now := time.Now().In(jst)
 	rand.Seed(now.UnixNano())
-	i := rand.Intn(40)
+	i := rand.Intn(10)
 
 	target := now.Add(time.Duration(i) * time.Second)
 	times = append(times, target)
@@ -41,7 +41,6 @@ func main() {
 
 		wg.Add(1)
 		go func(tt time.Time, ti int) {
-			fmt.Println(ti)
 			for {
 				jst, err := time.LoadLocation("Asia/Tokyo")
 				if err != nil {
@@ -58,7 +57,6 @@ func main() {
 				}
 			}
 		}(target, si)
-
-		wg.Wait()
 	}
+	wg.Wait()
 }
