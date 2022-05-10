@@ -36,8 +36,6 @@ func main() {
 
 	wg := sync.WaitGroup{}
 	for i, t := range times {
-		si := i + 1
-		target := t
 
 		wg.Add(1)
 		go func(tt time.Time, ti int) {
@@ -51,12 +49,12 @@ func main() {
 				now := time.Now().In(jst)
 
 				if tt.Before(now) {
-					fmt.Println("session:", ti, " time:", tt.Format("2006-01-02 15-04-05"))
+					fmt.Println("session:", ti+1, " time:", tt.Format("2006-01-02 15-04-05"))
 					wg.Done()
 					break
 				}
 			}
-		}(target, si)
+		}(t, i)
 	}
 	wg.Wait()
 }
