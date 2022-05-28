@@ -1,60 +1,90 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
-	"math/rand"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/gba-3/reminder/models"
+	"github.com/gba-3/reminder/notify"
+	"github.com/pkg/errors"
 )
 
-const SESSION_COUNT = 3
+const (
+	LOCALE = "Asia/Tokyo"
+)
 
-var times []time.Time
-
-func setTimer() error {
-	jst, err := time.LoadLocation("Asia/Tokyo")
+func init() {
+	lcl, err := time.LoadLocation(LOCALE)
 	if err != nil {
-		return err
+		log.Fatal(errors.WithStack(err))
 	}
-	now := time.Now().In(jst)
-	rand.Seed(now.UnixNano())
-	i := rand.Intn(10)
+	time.Local = lcl
+}
 
-	target := now.Add(time.Duration(i) * time.Second)
-	times = append(times, target)
+func sendReminder(ctx context.Context, task models.Task, chReminder chan<- models.Task) {
+	pd, err := task.PublicDate()
+	if err != nil {
+		log.Println(errors.WithStack(err))
+		return
+	}
 
-	return nil
+	for {
+		now := time.Now()
+		if pd.Before(now) {
+			chReminder <- task
+			break
+		}
+	}
+}
+
+func remind(ctx context.Context, wg *sync.WaitGroup, notify notify.Notify, chReminder <-chan models.Task) {
+	for {
+		select {
+		case task := <-chReminder:
+			notify.SendMessage(task.Name)
+		case <-ctx.Done():
+			wg.Done()
+		default:
+		}
+	}
 }
 
 func main() {
-	for i := 0; i < SESSION_COUNT; i++ {
-		if err := setTimer(); err != nil {
-			log.Println(err.Error())
-		}
+	ctx := context.Background()
+
+	url := os.Getenv("SLACK_WEBHOOK_URL")
+	if url == "" {
+		log.Fatalln("unexpected token: SLACK_WEBHOOK_URL is empty.")
 	}
 
-	wg := sync.WaitGroup{}
-	for i, t := range times {
-
-		wg.Add(1)
-		go func(tt time.Time, ti int) {
-			for {
-				jst, err := time.LoadLocation("Asia/Tokyo")
-				if err != nil {
-					log.Println(err.Error())
-					wg.Done()
-					break
-				}
-				now := time.Now().In(jst)
-
-				if tt.Before(now) {
-					fmt.Println("session:", ti+1, " time:", tt.Format("2006-01-02 15-04-05"))
-					wg.Done()
-					break
-				}
-			}
-		}(t, i)
+	sw, err := notify.NewSlackWebhook(url)
+	if err != nil {
+		log.Fatalln(errors.WithStack(err))
 	}
+
+	tasks := []models.Task{
+		{
+			Name:   "task1",
+			Date:   "2022-05-14 14:48:24",
+			Status: false,
+		},
+		{
+			Name:   "task2",
+			Date:   "2022-05-14 14:09:24",
+			Status: false,
+		},
+	}
+
+	wg := &sync.WaitGroup{}
+	chReminder := make(chan models.Task)
+	for _, task := range tasks {
+		go sendReminder(ctx, task, chReminder)
+	}
+
+	wg.Add(1)
+	go remind(ctx, wg, sw, chReminder)
 	wg.Wait()
 }
